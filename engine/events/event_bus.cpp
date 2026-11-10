@@ -17,7 +17,7 @@ void EventBus::unsubscribe(GameObserver& observer) {
 }
 
 void EventBus::publish(const DomainEvent& event, const GameState& game_state) const {
-    for(GameObserver* observer : _observers) {
+    for(GameObserver *observer : _observers) {
         observer->on_event(event, game_state);
     }
 }
