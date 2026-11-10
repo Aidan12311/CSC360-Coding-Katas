@@ -4,8 +4,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include "engine/util/concurrent_queue.hpp"
-#include "engine/save/save_event_builder.hpp"
 #include "engine/events/game_event_handlers.hpp"
 
 namespace et_game {
@@ -18,7 +16,7 @@ const static std::unordered_map<std::string, InputHandlerFn> HANDLERS = {
 void dispatch_game_event(
     GameState& game_state,
     const World& world,
-    SaveEventQueue& save_queue,
+    const EventBus& event_bus,
     const Json& json_payload
 ) {
     if(!json_payload.contains("type")) {
@@ -33,17 +31,17 @@ void dispatch_game_event(
         return;
     }
 
-    it->second(game_state, world, save_queue, json_payload);
+    it->second(game_state, world, event_bus, json_payload);
 }
 
 void handle_move_event(
     GameState& game_state,
     const World& world,
-    SaveEventQueue& save_queue,
+    const EventBus& event_bus,
     const Json& json_payload
 ) {
     (void) world;
-    (void) save_queue;
+    (void) event_bus;
 
     const std::string direction = json_payload.value("direction", "");
     const bool pressed = json_payload.value("pressed", false);
@@ -58,7 +56,7 @@ void handle_move_event(
 void handle_consume_candy_event(
     GameState& game_state,
     const World& world,
-    SaveEventQueue& save_queue,
+    const EventBus& event_bus,
     const Json& json_payload
 ) {
     (void) json_payload;
@@ -78,7 +76,7 @@ void handle_consume_candy_event(
         world.config.starting_energy
     );
 
-    save_queue.push(build_save_event(game_state, "candy_consumed"));
+    event_bus.publish(CandyConsumed{}, game_state);
 }
 
 } // namespace et_game

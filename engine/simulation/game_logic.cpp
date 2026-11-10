@@ -1,9 +1,6 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/simulation/game_logic.hpp"
-#include "engine/protocol/message_builders.hpp"
-#include "engine/save/save_event.hpp"
-#include "engine/save/save_event_builder.hpp"
 
 namespace et_game {
 
@@ -47,13 +44,14 @@ void apply_movement_event(
 
     float dx = 0.0f;
     float dy = 0.0f;
+
     if(game_state.input_state.move_north) { dy -= MOVE_SPEED  * dt; } 
     if(game_state.input_state.move_south) { dy += MOVE_SPEED  * dt; }
     if(game_state.input_state.move_east)  { dx  += MOVE_SPEED * dt; }
     if(game_state.input_state.move_west)  { dx  -= MOVE_SPEED * dt; }
 
     {
-    float new_x = player_pos.x + dx;
+        float new_x = player_pos.x + dx;
         int new_tile_x  = static_cast<int>(new_x);
         int curr_tile_y = static_cast<int>(player_pos.y);
 
@@ -78,8 +76,7 @@ void apply_movement_event(
 bool handle_exit_transitions(
     GameState& game_state,
     const World& world,
-    OutputQueue& output_queue,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 ) {
     if(!game_state.is_playing()) { 
         return false; 
@@ -115,8 +112,7 @@ bool handle_exit_transitions(
     game_state.player.local_pos = exit->spawn_pos;
     game_state.player.facing = exit->edge_direction;
 
-    output_queue.push(build_room_loaded(world, game_state, opposite_direction(crossed)));
-    save_queue.push(build_save_event(game_state, "exit_transition"));
+    event_bus.publish(RoomChanged{ opposite_direction(crossed) }, game_state);
     
     return true;
 }
@@ -124,7 +120,7 @@ bool handle_exit_transitions(
 void handle_pickup_collection(
     GameState& game_state,
     const World& world,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 ) {
     if(!game_state.is_playing()) { return; }
 
@@ -132,7 +128,7 @@ void handle_pickup_collection(
     const int player_tile_x = static_cast<int>(game_state.player.local_pos.x);
     const int player_tile_y = static_cast<int>(game_state.player.local_pos.y);
 
-    bool collected_anything{};
+    PickupsCollected collected{};
     for(const auto& pickup_spawn : room.pickup_spawns) {
         if(!game_state.is_pickup_active(pickup_spawn.id)) { continue; }
         if(static_cast<int>(pickup_spawn.pos.x) != player_tile_x) { continue; }
@@ -148,12 +144,12 @@ void handle_pickup_collection(
             game_state.candy_count++;
         }
 
-        collected_anything = true;
+        collected.pickup_ids.push_back(pickup_spawn.id);
         spdlog::info("Collected pickup '{}' of type '{}'", pickup_spawn.id, pickup_spawn.type);
     }
 
-    if(collected_anything) {
-        save_queue.push(build_save_event(game_state, "pickup"));
+    if(!collected.pickup_ids.empty()) {
+        event_bus.publish(collected, game_state);
     }
 }
 
@@ -171,19 +167,19 @@ void drain_energy(GameState& game_state, const World& world, double dt) {
 void check_win_lose(
     GameState& game_state,
     const World& world,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 ) {
     if(game_state.has_won(world)) {
         game_state.status = GameStatus::Won;
         spdlog::info("User '{}' has won the game!", game_state.user_id);
-    
-        save_queue.push(build_save_event(game_state, "win"));
+
+        event_bus.publish(GameWon{}, game_state);
     }
     else if(game_state.energy <= 0.0f) {
         game_state.status = GameStatus::Lost;
         spdlog::info("User '{}' has lost the game!", game_state.user_id);
-    
-        save_queue.push(build_save_event(game_state, "lose"));
+
+        event_bus.publish(GameLost{}, game_state);
     }
 }
 
