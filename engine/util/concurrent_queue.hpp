@@ -11,7 +11,6 @@
 #include "engine/save/save_event.hpp"
 #include "engine/events/input_event.hpp"
 
-
 namespace et_game {
 
 template<typename T>

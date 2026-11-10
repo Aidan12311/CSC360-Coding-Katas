@@ -3,7 +3,7 @@
 
 #include "models/world.hpp"
 #include "engine/state/game_state.hpp"
-#include "engine/util/concurrent_queue.hpp"
+#include "engine/events/event_bus.hpp"
 
 namespace et_game {
 
@@ -16,14 +16,13 @@ void apply_movement_event(
 bool handle_exit_transitions(
     GameState& game_state,
     const World& world,
-    OutputQueue& output_queue,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 );
 
 void handle_pickup_collection(
     GameState& game_state,
     const World& world,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 );
 
 void drain_energy(GameState& game_state, const World& world, double dt);
@@ -31,7 +30,7 @@ void drain_energy(GameState& game_state, const World& world, double dt);
 void check_win_lose(
     GameState& game_state,
     const World& world,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 );
 
 } // namespace et_game
