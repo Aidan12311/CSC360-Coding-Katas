@@ -2,12 +2,12 @@
 
 #include <spdlog/spdlog.h>
 
-#include "engine/save/save_publisher.hpp"
+#include "engine/save/rabbitmq_save_repository.hpp"
 #include "SimpleAmqpClient/BasicMessage.h"
 
 namespace et_game {
 
-SavePublisher::SavePublisher(
+RabbitMqSaveRepository::RabbitMqSaveRepository(
     std::string host,
     std::uint16_t port,
     std::string username,
@@ -21,7 +21,7 @@ SavePublisher::SavePublisher(
     _queue_name(std::move(queue_name))
 {}
 
-void SavePublisher::connect() {
+void RabbitMqSaveRepository::connect() {
     if(_channel) {
         return;
     }
@@ -40,34 +40,34 @@ void SavePublisher::connect() {
     catch(const std::exception& e) {
         _channel.reset();
         
-        throw SavePublisherError(std::format(
+        throw SaveRepositoryError(std::format(
             "AMQP error while connecting to {}:{}: {}",
             _host, _port, e.what()
         ));
     }
 
-    spdlog::info("SavePublisher connected to {}:{} (queue='{}')!", _host, _port, _queue_name);
+    spdlog::info("RabbitMqSaveRepository connected to {}:{} (queue='{}')!", _host, _port, _queue_name);
 }
 
-void SavePublisher::disconnect() {
+void RabbitMqSaveRepository::disconnect() {
     if(!_channel) {
         return;
     }
 
     _channel.reset();
-    spdlog::info("SavePublisher disconnected!");
+    spdlog::info("RabbitMqSaveRepository disconnected!");
 }
 
-bool SavePublisher::publish(const std::string& msg_body) {
+bool RabbitMqSaveRepository::add(const SaveEvent& save_event) {
     if(!_channel) {
-        spdlog::warn("Failed to publish message! SavePublisher not connected!");
+        spdlog::warn("Failed to publish message! RabbitMqSaveRepository not connected!");
         return false;
     }
 
-    spdlog::info("Publishing message: {} to amqp server {}:{}!", msg_body, _host, _port);
+    spdlog::info("Publishing save event (trigger={}) to amqp server {}:{}!", save_event.trigger, _host, _port);
 
     try {
-        auto msg = AmqpClient::BasicMessage::Create(msg_body);
+        auto msg = AmqpClient::BasicMessage::Create(save_event.body);
         msg->ContentType("application/json");
         msg->DeliveryMode(AmqpClient::BasicMessage::dm_persistent);
 
@@ -88,4 +88,3 @@ bool SavePublisher::publish(const std::string& msg_body) {
 }
 
 } // namespace et_game
-

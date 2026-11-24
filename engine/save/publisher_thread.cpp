@@ -13,16 +13,16 @@ namespace {
 constexpr int INITIAL_RETRY_SEC = 1;
 constexpr int MAX_RETRY_SEC = 30;
 
-void connect_with_retry(SavePublisher& publisher) {
+void connect_with_retry(SaveRepository& repository) {
     int retry_sec = INITIAL_RETRY_SEC;
 
     while(true) {
         try {
-            publisher.connect();
+            repository.connect();
             return;
         }
-        catch(const SavePublisherError& e) {
-            spdlog::warn("SavePublisher failed to connect! Error: {}, retrying in {}s", e.what(), retry_sec);
+        catch(const SaveRepositoryError& e) {
+            spdlog::warn("SaveRepository failed to connect! Error: {}, retrying in {}s", e.what(), retry_sec);
         }
 
         std::this_thread::sleep_for(std::chrono::seconds(retry_sec));
@@ -32,10 +32,10 @@ void connect_with_retry(SavePublisher& publisher) {
 
 } // anonymous namespace
 
-void run_publisher_thread(SavePublisher &save_publisher, SaveEventQueue &save_queue) {
+void run_publisher_thread(SaveRepository& save_repository, SaveEventQueue& save_queue) {
     spdlog::info("Publisher thread starting...");
 
-    connect_with_retry(save_publisher);
+    connect_with_retry(save_repository);
 
     while(true) {
         auto event = save_queue.pop();
@@ -44,14 +44,14 @@ void run_publisher_thread(SavePublisher &save_publisher, SaveEventQueue &save_qu
             break;
         }
 
-        bool has_sent = save_publisher.publish(event->body);
+        bool has_sent = save_repository.add(*event);
         if(!has_sent) {
             spdlog::warn("Failed to publish message (trigger='{}')! Reconnecting!", event->trigger);
-            save_publisher.disconnect();
+            save_repository.disconnect();
 
-            connect_with_retry(save_publisher);
+            connect_with_retry(save_repository);
 
-            has_sent = save_publisher.publish(event->body);
+            has_sent = save_repository.add(*event);
             if(!has_sent) {
                 spdlog::error("Publish failed after reconnect (trigger='{}')! Dropping event!", event->trigger);
             }
@@ -61,7 +61,7 @@ void run_publisher_thread(SavePublisher &save_publisher, SaveEventQueue &save_qu
         }
     }
 
-    save_publisher.disconnect();
+    save_repository.disconnect();
     spdlog::info("Publisher thread exited!");
 }
 
