@@ -6,15 +6,15 @@
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 
-#include "engine/save/save_event.hpp"
 #include "engine/util/concurrent_queue.hpp"
 #include "engine/util/visitor.hpp"
 #include "engine/save/save_client.hpp"
+#include "engine/save/save_observer.hpp"
 #include "engine/state/game_state.hpp"
 #include "engine/session/game_loop.hpp"
 #include "engine/events/input_event.hpp"
 #include "engine/simulation/game_logic.hpp"
-#include "engine/protocol/message_builders.hpp"
+#include "engine/network/network_observer.hpp"
 #include "engine/events/game_event_handlers.hpp"
 
 namespace et_game {
@@ -26,7 +26,7 @@ void handle_connect(
     const ConnectEvent& connect_event,
     const World& world,
     std::optional<GameState>& game_state,
-    OutputQueue& output_queue
+    const EventBus& event_bus
 ) {
     spdlog::info("Connect: user='{}', mode='{}'", connect_event.user_id, connect_event.mode);
 
@@ -41,7 +41,7 @@ void handle_connect(
             game_state = GameState(connect_event.user_id, world);
         }
 
-        output_queue.push(build_room_loaded(world, *game_state, std::nullopt));
+        event_bus.publish(SessionStarted{}, *game_state);
     }
     catch(const std::exception& e) {
         spdlog::error("Failed to start game session! {}", e.what());
@@ -58,21 +58,20 @@ void handle_game_event(
     const GameEvent& game_event,
     const World& world,
     std::optional<GameState>& game_state,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 ) {
     if(!game_state.has_value()) {
         return;
     }
 
-    dispatch_game_event(*game_state, world, save_queue, game_event.payload);
+    dispatch_game_event(*game_state, world, event_bus, game_event.payload);
 }
 
 void tick(
     GameState& game_state,
     const World& world,
     double dt,
-    OutputQueue& output_queue,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 ) {
     if(!game_state.is_playing()) {
         return;
@@ -80,20 +79,20 @@ void tick(
     
     apply_movement_event(game_state, world, dt);
 
-    if(handle_exit_transitions(game_state, world, output_queue, save_queue)) {
+    if(handle_exit_transitions(game_state, world, event_bus)) {
         return; 
     }
 
-    handle_pickup_collection(game_state, world, save_queue);
+    handle_pickup_collection(game_state, world, event_bus);
     drain_energy(game_state, world, dt);
-    check_win_lose(game_state, world, save_queue);
+    check_win_lose(game_state, world, event_bus);
 
+    // NOTE: A win/lose already published GameWon/GameLost, so no state update this tick
     if(!game_state.is_playing()) {
-        output_queue.push(build_game_over(game_state));
         return;
     }
 
-    output_queue.push(build_state_update(world, game_state));
+    event_bus.publish(TickCompleted{}, game_state);
 }
 
 void run_game_loop(
@@ -112,6 +111,13 @@ void run_game_loop(
 
     std::optional<GameState> game_state{};
 
+    SaveObserver save_observer(save_queue);
+    NetworkObserver network_observer(world, output_queue);
+
+    EventBus event_bus{};
+    event_bus.subscribe(network_observer);
+    event_bus.subscribe(save_observer);
+
     while(true) {
         auto curr_tick_time = Clock::now();
         double frame_time = duration<double>(curr_tick_time - last_tick_time).count();
@@ -123,18 +129,17 @@ void run_game_loop(
         }
 
         accumulated_time += frame_time;
-
         while(accumulated_time >= TICK_INTERVAL_SEC) {
             while(auto event = input_queue.try_pop()) {
                 std::visit(Overloaded {
-                    [&](const ConnectEvent& connect_event)       { handle_connect(connect_event, world, game_state, output_queue); },
+                    [&](const ConnectEvent& connect_event)       { handle_connect(connect_event, world, game_state, event_bus); },
                     [&](const DisconnectEvent& disconnect_event) { handle_disconnect(disconnect_event, game_state); },
-                    [&](const GameEvent& game_event)             { handle_game_event(game_event, world, game_state, save_queue); }
+                    [&](const GameEvent& game_event)             { handle_game_event(game_event, world, game_state, event_bus); }
                 }, *event);
             }
 
             if(game_state.has_value()) {
-                tick(*game_state, world, TICK_INTERVAL_SEC, output_queue, save_queue);
+                tick(*game_state, world, TICK_INTERVAL_SEC, event_bus);
             }
 
             accumulated_time -= TICK_INTERVAL_SEC;

@@ -5,6 +5,7 @@
 
 #include "models/world.hpp"
 #include "engine/state/game_state.hpp"
+#include "engine/events/event_bus.hpp"
 #include "engine/events/input_event.hpp"
 #include "engine/util/concurrent_queue.hpp"
 
@@ -14,7 +15,7 @@ void handle_connect(
     const ConnectEvent& connect_event,
     const World& world,
     std::optional<GameState>& game_state,
-    OutputQueue& output_queue
+    const EventBus& event_bus
 );
 
 void handle_disconnect(
@@ -26,15 +27,14 @@ void handle_game_event(
     const GameEvent& game_event,
     const World& world,
     std::optional<GameState>& game_state,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 );
 
 void tick(
     GameState& game_state,
     const World& world,
     double dt,
-    OutputQueue& output_queue,
-    SaveEventQueue& save_queue
+    const EventBus& event_bus
 );
 
 void run_game_loop(

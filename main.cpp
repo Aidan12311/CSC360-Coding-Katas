@@ -9,7 +9,7 @@
 
 #include "engine/session/game_loop.hpp"
 #include "engine/world/world_loader.hpp"
-#include "engine/save/save_publisher.hpp"
+#include "engine/save/rabbitmq_save_repository.hpp"
 #include "engine/save/publisher_thread.hpp"
 #include "engine/network/sender_thread.hpp"
 #include "engine/util/concurrent_queue.hpp"
@@ -62,7 +62,7 @@ int main() {
 
     et_game::WebsocketServer websocket_server(8001, input_queue);
 
-    et_game::SavePublisher save_publisher(
+    et_game::RabbitMqSaveRepository save_repository(
         rabbitmq_host, rabbitmq_port,
         rabbitmq_user, rabbitmq_pass,
         SAVES_QUEUE_NAME
@@ -78,8 +78,8 @@ int main() {
         et_game::run_sender_thread(websocket_server, output_queue);
     });
 
-    std::thread publisher_thread([&save_publisher, &save_queue]() {
-        et_game::run_publisher_thread(save_publisher, save_queue);
+    std::thread publisher_thread([&save_repository, &save_queue]() {
+        et_game::run_publisher_thread(save_repository, save_queue);
     });
 
     spdlog::info("Sender thread running!");
